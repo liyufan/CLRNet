@@ -43,21 +43,35 @@ git submodule update --init --recursive
 ### Create a conda virtual environment and activate it (conda is optional)
 
 ```Shell
-conda create -n clrnet python=3.8 -y
+conda create -n clrnet python=3 -y
 conda activate clrnet
+```
+
+### Fix imgaug
+`imgaug` has not been updated for a long time and is not compatible `numpy>=1.20.0`. We need to fix it.
+```Shell
+git clone https://github.com/aleju/imgaug
+cd imgaug
+```
+Rename all `np.bool` to `np.bool_` and all `np.complex` to `np.complex_` in this repository, then install it.
+```Shell
+pip install .
 ```
 
 ### Install dependencies
 
 ```Shell
 # Install pytorch firstly, the cudatoolkit version should be same in your system.
-
-conda install pytorch torchvision cudatoolkit=10.1 -c pytorch
+conda install pytorch torchvision pytorch-cuda -c pytorch -c nvidia
 
 # Or you can install via pip
-pip install torch==1.8.0 torchvision==0.9.0
+pip install torch torchvision
+
+# Install build tools
+pip install ninja pytest-runner
 
 # Install python packages
+pip install -r requirements.txt
 python setup.py build develop
 ```
 
@@ -120,10 +134,21 @@ ln -s $TUSIMPLEROOT data/tusimple
 For Tusimple, you should have structure like this:
 ```
 $TUSIMPLEROOT/clips # data folders
-$TUSIMPLEROOT/lable_data_xxxx.json # label json file x4
+$TUSIMPLEROOT/lable_data_xxxx.json # label json file x3
 $TUSIMPLEROOT/test_tasks_0627.json # test tasks json file
 $TUSIMPLEROOT/test_label.json # test label json file
+```
+If you want to train with your own data, remember to modify the following files:
+```
+configs/clrnet/clr_resnetxx_tusimple.py
+# modify '3626' in 'total_iter' to your own training data size
+# modify 'test_json_file' to your own test json file
 
+clrnet/datasets/tusimple.py
+# modify 'SPLIT_FILES'
+
+tools/generate_seg_tusimple.py
+# modify 'TRAIN_SET', 'VAL_SET', 'TEST_SET'
 ```
 
 For Tusimple, the segmentation annotation is not provided, hence we need to generate segmentation from the json annotation. 
@@ -179,6 +204,41 @@ python main.py configs/clrnet/clr_dla34_culane.py --validate --load_from culane_
 Currently, this code can output the visualization result when testing, just add `--view`.
 We will get the visualization result in `work_dirs/xxx/xxx/visualization`.
 
+For example, run
+```Shell
+python main.py configs/clrnet/clr_dla34_culane.py --validate --load_from culane_dla34.pth --gpus 0 --view
+```
+
+### Inference
+See `tools/detect.py` for detailed information.
+```
+python tools/detect.py --help
+
+usage: detect.py [-h] [--img IMG] [--show] [--savedir SAVEDIR]
+                 [--load_from LOAD_FROM]
+                 config
+
+positional arguments:
+  config                The path of config file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --img IMG             The path of the img (img file or img_folder), for
+                        example: 'data/*.png' (the quotes must be passed)
+  --show                Whether to show the image
+  --savedir SAVEDIR     The root of save directory
+  --load_from LOAD_FROM
+                        The path of model
+```
+To run inference on example images in `./images` and save the visualization images in `vis` folder:
+```
+python tools/detect.py configs/clrnet/clr_resnet18_tusimple.py --img images\
+          --load_from tusimple_r18.pth --savedir ./vis
+```
+Note that if you want to use wildcards, remember to wrap the `--img` parameter in quotes, e.g. `--img 'images/*.png'` or `--img "images/*.png"` or you will get an error like this:
+```
+detect.py: error: unrecognized arguments: images/2.jpg
+```
 
 ## Results
 ![F1 vs. Latency for SOTA methods on the lane detection](.github/latency_f1score.png)

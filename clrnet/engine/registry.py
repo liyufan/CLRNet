@@ -1,4 +1,5 @@
 from clrnet.utils import Registry, build_from_cfg
+from torch import nn
 
 TRAINER = Registry('trainer')
 EVALUATOR = Registry('evaluator')

@@ -1,4 +1,4 @@
-from .transforms import (RandomLROffsetLABEL, RandomUDoffsetLABEL, Resize,
+from .transforms import (RandomLROffsetLABEL, RandomUDOffsetLABEL, Resize,
                          RandomCrop, CenterCrop, RandomRotation, RandomBlur,
                          RandomHorizontalFlip, Normalize, ToTensor)
 
@@ -8,7 +8,7 @@ from .process import Process
 __all__ = [
     'Process',
     'RandomLROffsetLABEL',
-    'RandomUDoffsetLABEL',
+    'RandomUDOffsetLABEL',
     'Resize',
     'RandomCrop',
     'CenterCrop',

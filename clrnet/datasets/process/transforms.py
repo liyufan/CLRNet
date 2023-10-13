@@ -45,7 +45,7 @@ class ToTensor(object):
     def __call__(self, sample):
         data = {}
         if len(sample['img'].shape) < 3:
-            sample['img'] = np.expand_dims(img, -1)
+            sample['img'] = np.expand_dims(sample['img'], -1)
         for key in self.keys:
             if key == 'img_metas' or key == 'gt_masks' or key == 'lane_line':
                 data[key] = sample[key]
@@ -93,7 +93,7 @@ class RandomLROffsetLABEL(object):
 
 
 @PROCESS.register_module
-class RandomUDoffsetLABEL(object):
+class RandomUDOffsetLABEL(object):
     def __init__(self, max_offset, cfg=None):
         self.max_offset = max_offset
 

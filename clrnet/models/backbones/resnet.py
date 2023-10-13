@@ -2,28 +2,29 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.hub import load_state_dict_from_url
+from torchvision import models
 
 from clrnet.models.registry import BACKBONES
 
 model_urls = {
     'resnet18':
-    'https://download.pytorch.org/models/resnet18-5c106cde.pth',
+    models.ResNet18_Weights.DEFAULT.url,
     'resnet34':
-    'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
+    models.ResNet34_Weights.DEFAULT.url,
     'resnet50':
-    'https://download.pytorch.org/models/resnet50-19c8e357.pth',
+    models.ResNet50_Weights.DEFAULT.url,
     'resnet101':
-    'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
+    models.ResNet101_Weights.DEFAULT.url,
     'resnet152':
-    'https://download.pytorch.org/models/resnet152-b121ed2d.pth',
+    models.ResNet152_Weights.DEFAULT.url,
     'resnext50_32x4d':
-    'https://download.pytorch.org/models/resnext50_32x4d-7cdf4587.pth',
+    models.ResNeXt50_32X4D_Weights.DEFAULT.url,
     'resnext101_32x8d':
-    'https://download.pytorch.org/models/resnext101_32x8d-8ba56ff5.pth',
+    models.ResNeXt101_32X8D_Weights.DEFAULT.url,
     'wide_resnet50_2':
-    'https://download.pytorch.org/models/wide_resnet50_2-95faca4d.pth',
+    models.Wide_ResNet50_2_Weights.DEFAULT.url,
     'wide_resnet101_2':
-    'https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth',
+    models.Wide_ResNet101_2_Weights.DEFAULT.url,
 }
 
 

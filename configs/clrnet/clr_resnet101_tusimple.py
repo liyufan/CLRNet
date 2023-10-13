@@ -37,7 +37,7 @@ epochs = 70
 batch_size = 10 
 
 optimizer = dict(type='AdamW', lr=0.3e-3)  # 3e-4 for batchsize 8
-total_iter = (3616 // batch_size + 1) * epochs
+total_iter = (3626 // batch_size + 1) * epochs
 scheduler = dict(type='CosineAnnealingLR', T_max=total_iter)
 
 eval_ep = 1

@@ -5,6 +5,7 @@ from functools import partial
 import numpy as np
 import random
 from mmcv.parallel import collate
+from torch import nn
 
 DATASETS = Registry('datasets')
 PROCESS = Registry('process')
