@@ -41,9 +41,14 @@ class TuSimple(BaseDataset):
                 gt_lanes = data['lanes']
                 mask_path = data['raw_file'].replace('clips',
                                                      'seg_label')[:-3] + 'png'
+                # 'categories' for https://github.com/zillur-av/LVLane
+                # 'classes' for https://github.com/fabvio/TuSimple-lane-classes
+                categories = (data['categories'] if 'categories' in data
+                                else list(map(int, data['classes'].split(' '))))
                 lanes = [[(x, y) for (x, y) in zip(lane, y_samples) if x >= 0]
                          for lane in gt_lanes]
-                lanes = [lane for lane in lanes if len(lane) > 0]
+                lanes, categories = zip(*[(lane, cat) for lane, cat in zip(
+                                        lanes, categories) if len(lane) > 1])
                 max_lanes = max(max_lanes, len(lanes))
                 self.data_infos.append({
                     'img_path':
@@ -54,6 +59,9 @@ class TuSimple(BaseDataset):
                     osp.join(self.data_root, mask_path),
                     'lanes':
                     lanes,
+                    'categories':
+                    list(map(self.cfg.cls_merge.get, categories))
+                    if self.cfg.haskey('cls_merge') else categories,
                 })
 
         if self.training:

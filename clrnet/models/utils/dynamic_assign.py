@@ -2,7 +2,7 @@ import torch
 from clrnet.models.losses.lineiou_loss import line_iou
 
 
-def distance_cost(predictions, targets, img_w):
+def distance_cost(predictions, targets, img_w, lane_classes):
     """
     repeat predictions and targets to generate all combinations
     use the abs distance as the new distance cost
@@ -13,12 +13,12 @@ def distance_cost(predictions, targets, img_w):
     predictions = torch.repeat_interleave(
         predictions, num_targets, dim=0
     )[...,
-      6:]  # repeat_interleave'ing [a, b] 2 times gives [a, a, b, b] ((np + nt) * 78)
+      lane_classes + 6:]  # repeat_interleave'ing [a, b] 2 times gives [a, a, b, b] ((np + nt) * 78)
 
     targets = torch.cat(
         num_priors *
         [targets])[...,
-                   6:]  # applying this 2 times on [c, d] gives [c, d, c, d]
+                   lane_classes + 6:]  # applying this 2 times on [c, d] gives [c, d, c, d]
 
     invalid_masks = (targets < 0) | (targets >= img_w)
     lengths = (~invalid_masks).sum(dim=1)
@@ -91,6 +91,7 @@ def assign(
     img_h,
     distance_cost_weight=3.,
     cls_cost_weight=1.,
+    lane_classes=2,
 ):
     '''
     computes dynamicly matching based on the cost, including cls cost and lane similarity cost
@@ -100,33 +101,37 @@ def assign(
     return:
         matched_row_inds (Tensor): matched predictions, shape: (num_targets)
         matched_col_inds (Tensor): matched targets, shape: (num_targets)
+        matched_cls (Tensor): matched lane classes, shape: (num_targets)
     '''
     predictions = predictions.detach().clone()
-    predictions[:, 3] *= (img_w - 1)
-    predictions[:, 6:] *= (img_w - 1)
+    predictions[:, lane_classes + 3] *= (img_w - 1)
+    predictions[:, lane_classes + 6:] *= (img_w - 1)
     targets = targets.detach().clone()
 
     # distances cost
-    distances_score = distance_cost(predictions, targets, img_w)
+    distances_score = distance_cost(predictions, targets, img_w, lane_classes)
     distances_score = 1 - (distances_score / torch.max(distances_score)
                            ) + 1e-2  # normalize the distance
-
+    conf_targets = targets[:, 1].long()
+    lane_cls_targets = (targets[:, 2:lane_classes + 2] == 1).nonzero()[:, 1].long() + 1
     # classification cost
-    cls_score = focal_cost(predictions[:, :2], targets[:, 1].long())
+    cls_score = focal_cost(predictions[:, :2], conf_targets) + focal_cost(
+        predictions[:, 2:2 + lane_classes], lane_cls_targets
+    )
     num_priors = predictions.shape[0]
     num_targets = targets.shape[0]
 
-    target_start_xys = targets[:, 2:4]  # num_targets, 2
+    target_start_xys = targets[:, lane_classes + 2:lane_classes + 4]  # num_targets, 2
     target_start_xys[..., 0] *= (img_h - 1)
-    prediction_start_xys = predictions[:, 2:4]
+    prediction_start_xys = predictions[:, lane_classes + 2:lane_classes + 4]
     prediction_start_xys[..., 0] *= (img_h - 1)
 
     start_xys_score = torch.cdist(prediction_start_xys, target_start_xys,
                                   p=2).reshape(num_priors, num_targets)
     start_xys_score = (1 - start_xys_score / torch.max(start_xys_score)) + 1e-2
 
-    target_thetas = targets[:, 4].unsqueeze(-1)
-    theta_score = torch.cdist(predictions[:, 4].unsqueeze(-1),
+    target_thetas = targets[:, lane_classes + 4].unsqueeze(-1)
+    theta_score = torch.cdist(predictions[:, lane_classes + 4].unsqueeze(-1),
                               target_thetas,
                               p=1).reshape(num_priors, num_targets) * 180
     theta_score = (1 - theta_score / torch.max(theta_score)) + 1e-2
@@ -134,7 +139,8 @@ def assign(
     cost = -(distances_score * start_xys_score * theta_score
              )**2 * distance_cost_weight + cls_score * cls_cost_weight
 
-    iou = line_iou(predictions[..., 6:], targets[..., 6:], img_w, aligned=False)
+    iou = line_iou(predictions[..., lane_classes + 6:], targets[..., lane_classes + 6:], img_w, aligned=False)
     matched_row_inds, matched_col_inds = dynamic_k_assign(cost, iou)
+    matched_cls = lane_cls_targets[matched_col_inds]
 
-    return matched_row_inds, matched_col_inds
+    return matched_row_inds, matched_col_inds, matched_cls

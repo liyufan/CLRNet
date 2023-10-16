@@ -22,6 +22,7 @@ class GenerateLaneLine(object):
         self.max_lanes = cfg.max_lanes
         self.offsets_ys = np.arange(self.img_h, -1, -self.strip_size)
         self.training = training
+        self.lane_classes = cfg.lane_classes
 
         if transforms is None:
             transforms = CLRTransforms(self.img_h, self.img_w)
@@ -103,14 +104,20 @@ class GenerateLaneLine(object):
 
         return filtered_lane
 
-    def transform_annotation(self, anno, img_wh=None):
+    def transform_annotation(self, anno):
         img_w, img_h = self.img_w, self.img_h
 
         old_lanes = anno['lanes']
+        old_categories = anno['categories']
+        # in categories, 0 is background, 1 is cls1, 2 is cls2, etc
+        old_categories = list(filter(lambda x: x != 0, old_categories))
+        assert len(old_lanes) == len(old_categories), 'Number of lanes and categories must match'
 
         # removing lanes with less than 2 points
-        old_lanes = filter(lambda x: len(x) > 1, old_lanes)
+        old_zip = filter(lambda x: len(x[0]) > 1, zip(old_lanes, old_categories))
+        old_lanes, categories = zip(*old_zip)
         # sort lane points by Y (bottom to top of the image)
+        # no impact on the correspondence between categories and lanes
         old_lanes = [sorted(lane, key=lambda x: -x[1]) for lane in old_lanes]
         # remove points with same Y (keep first occurrence)
         old_lanes = [self.filter_lane(lane) for lane in old_lanes]
@@ -120,12 +127,12 @@ class GenerateLaneLine(object):
         ] for x, y in lane] for lane in old_lanes]
         # create tranformed annotations
         lanes = np.ones(
-            (self.max_lanes, 2 + 1 + 1 + 2 + self.n_offsets), dtype=np.float32
-        ) * -1e5  # 2 scores, 1 start_y, 1 start_x, 1 theta, 1 length, S+1 coordinates
+            (self.max_lanes, 2 + self.lane_classes + 1 + 1 + 2 + self.n_offsets), dtype=np.float32
+        ) * -1e5  # 2 + lane_classes scores, 1 start_y, 1 start_x, 1 theta, 1 length, S+1 coordinates
         lanes_endpoints = np.ones((self.max_lanes, 2))
         # lanes are invalid by default
         lanes[:, 0] = 1
-        lanes[:, 1] = 0
+        lanes[:, 1:self.lane_classes + 2] = 0
         for lane_idx, lane in enumerate(old_lanes):
             if lane_idx >= self.max_lanes:
                 break
@@ -140,8 +147,9 @@ class GenerateLaneLine(object):
             all_xs = np.hstack((xs_outside_image, xs_inside_image))
             lanes[lane_idx, 0] = 0
             lanes[lane_idx, 1] = 1
-            lanes[lane_idx, 2] = len(xs_outside_image) / self.n_strips
-            lanes[lane_idx, 3] = xs_inside_image[0]
+            lanes[lane_idx, categories[lane_idx] + 1] = 1
+            lanes[lane_idx, self.lane_classes + 2] = len(xs_outside_image) / self.n_strips
+            lanes[lane_idx, self.lane_classes + 3] = xs_inside_image[0]
 
             thetas = []
             for i in range(1, len(xs_inside_image)):
@@ -153,11 +161,9 @@ class GenerateLaneLine(object):
 
             theta_far = sum(thetas) / len(thetas)
 
-            # lanes[lane_idx,
-            #       4] = (theta_closest + theta_far) / 2  # averaged angle
-            lanes[lane_idx, 4] = theta_far
-            lanes[lane_idx, 5] = len(xs_inside_image)
-            lanes[lane_idx, 6:6 + len(all_xs)] = all_xs
+            lanes[lane_idx, self.lane_classes + 4] = theta_far
+            lanes[lane_idx, self.lane_classes + 5] = len(xs_inside_image)
+            lanes[lane_idx, self.lane_classes + 6:self.lane_classes + 6 + len(all_xs)] = all_xs
             lanes_endpoints[lane_idx, 0] = (len(all_xs) - 1) / self.n_strips
             lanes_endpoints[lane_idx, 1] = xs_inside_image[-1]
 
@@ -194,11 +200,10 @@ class GenerateLaneLine(object):
                     image=img_org.copy().astype(np.uint8),
                     line_strings=line_strings_org)
             line_strings.clip_out_of_image_()
-            new_anno = {'lanes': self.linestrings_to_lanes(line_strings)}
+            new_anno = {'lanes': self.linestrings_to_lanes(line_strings),
+                        'categories': sample['categories']}
             try:
-                annos = self.transform_annotation(new_anno,
-                                                  img_wh=(self.img_w,
-                                                          self.img_h))
+                annos = self.transform_annotation(new_anno)
                 label = annos['label']
                 lane_endpoints = annos['lane_endpoints']
                 break

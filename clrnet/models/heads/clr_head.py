@@ -34,6 +34,7 @@ class CLRHead(nn.Module):
         self.cfg = cfg
         self.img_w = self.cfg.img_w
         self.img_h = self.cfg.img_h
+        self.lane_classes = self.cfg.lane_classes
         self.n_strips = num_points - 1
         self.n_offsets = num_points
         self.num_priors = num_priors
@@ -79,7 +80,7 @@ class CLRHead(nn.Module):
         self.reg_layers = nn.Linear(
             self.fc_hidden_dim, self.n_offsets + 1 + 2 +
             1)  # n offsets + 1 length + start_x + start_y + theta
-        self.cls_layers = nn.Linear(self.fc_hidden_dim, 2)
+        self.cls_layers = nn.Linear(self.fc_hidden_dim, self.lane_classes + 2)
 
         weights = torch.ones(self.cfg.num_classes)
         weights[0] = self.cfg.bg_weight
@@ -125,21 +126,21 @@ class CLRHead(nn.Module):
     def generate_priors_from_embeddings(self):
         predictions = self.prior_embeddings.weight  # (num_prop, 3)
 
-        # 2 scores, 1 start_y, 1 start_x, 1 theta, 1 length, 72 coordinates, score[0] = negative prob, score[1] = positive prob
+        # 2 + lane_classes scores, 1 start_y, 1 start_x, 1 theta, 1 length, 72 coordinates, score[0] = negative prob, score[1] = positive prob
         priors = predictions.new_zeros(
-            (self.num_priors, 2 + 2 + 2 + self.n_offsets), device=predictions.device)
+            (self.num_priors, 2 + self.lane_classes + 2 + 2 + self.n_offsets), device=predictions.device)
 
-        priors[:, 2:5] = predictions.clone()
-        priors[:, 6:] = (
-            priors[:, 3].unsqueeze(1).clone().repeat(1, self.n_offsets) *
+        priors[:, self.lane_classes + 2:self.lane_classes + 5] = predictions.clone()
+        priors[:, self.lane_classes + 6:] = (
+            priors[:, self.lane_classes + 3].unsqueeze(1).clone().repeat(1, self.n_offsets) *
             (self.img_w - 1) +
             ((1 - self.prior_ys.repeat(self.num_priors, 1) -
-              priors[:, 2].unsqueeze(1).clone().repeat(1, self.n_offsets)) *
-             self.img_h / torch.tan(priors[:, 4].unsqueeze(1).clone().repeat(
+              priors[:, self.lane_classes + 2].unsqueeze(1).clone().repeat(1, self.n_offsets)) *
+             self.img_h / torch.tan(priors[:, self.lane_classes + 4].unsqueeze(1).clone().repeat(
                  1, self.n_offsets) * math.pi + 1e-5))) / (self.img_w - 1)
 
         # init priors on feature map
-        priors_on_featmap = priors.clone()[..., 6 + self.sample_x_indexs]
+        priors_on_featmap = priors.clone()[..., self.lane_classes + 6 + self.sample_x_indexs]
 
         return priors, priors_on_featmap
 
@@ -229,33 +230,33 @@ class CLRHead(nn.Module):
             reg = self.reg_layers(reg_features)
 
             cls_logits = cls_logits.reshape(
-                batch_size, -1, cls_logits.shape[1])  # (B, num_priors, 2)
+                batch_size, -1, cls_logits.shape[1])  # (B, num_priors, lane_classes + 2)
             reg = reg.reshape(batch_size, -1, reg.shape[1])
 
             predictions = priors.clone()
-            predictions[:, :, :2] = cls_logits
+            predictions[:, :, :self.lane_classes + 2] = cls_logits
 
             predictions[:, :,
-                        2:5] += reg[:, :, :3]  # also reg theta angle here
-            predictions[:, :, 5] = reg[:, :, 3]  # length
+                        self.lane_classes + 2:self.lane_classes + 5] += reg[:, :, :3]  # also reg theta angle here
+            predictions[:, :, self.lane_classes + 5] = reg[:, :, 3]  # length
 
             def tran_tensor(t):
                 return t.unsqueeze(2).clone().repeat(1, 1, self.n_offsets)
 
-            predictions[..., 6:] = (
-                tran_tensor(predictions[..., 3]) * (self.img_w - 1) +
+            predictions[..., self.lane_classes + 6:] = (
+                tran_tensor(predictions[..., self.lane_classes + 3]) * (self.img_w - 1) +
                 ((1 - self.prior_ys.repeat(batch_size, num_priors, 1) -
-                  tran_tensor(predictions[..., 2])) * self.img_h /
-                 torch.tan(tran_tensor(predictions[..., 4]) * math.pi + 1e-5))) / (self.img_w - 1)
+                  tran_tensor(predictions[..., self.lane_classes + 2])) * self.img_h /
+                 torch.tan(tran_tensor(predictions[..., self.lane_classes + 4]) * math.pi + 1e-5))) / (self.img_w - 1)
 
             prediction_lines = predictions.clone()
-            predictions[..., 6:] += reg[..., 4:]
+            predictions[..., self.lane_classes + 6:] += reg[..., 4:]
 
             predictions_lists.append(predictions)
 
             if stage != self.refine_layers - 1:
                 priors = prediction_lines.detach().clone()
-                priors_on_featmap = priors[..., 6 + self.sample_x_indexs]
+                priors_on_featmap = priors[..., self.lane_classes + 6 + self.sample_x_indexs]
 
         if self.training:
             seg = None
@@ -284,10 +285,10 @@ class CLRHead(nn.Module):
         self.prior_ys = self.prior_ys.double()
         lanes = []
         for lane in predictions:
-            lane_xs = lane[6:]  # normalized value
-            start = min(max(0, int(round(lane[2].item() * self.n_strips))),
+            lane_xs = lane[self.lane_classes + 6:]  # normalized value
+            start = min(max(0, int(round(lane[self.lane_classes + 2].item() * self.n_strips))),
                         self.n_strips)
-            length = int(round(lane[5].item()))
+            length = int(round(lane[self.lane_classes + 5].item()))
             end = start + length - 1
             end = min(end, len(self.prior_ys) - 1)
             # end = label_end
@@ -311,8 +312,8 @@ class CLRHead(nn.Module):
                 dim=1).squeeze(2)
             lane = Lane(points=points.cpu().numpy(),
                         metadata={
-                            'start_x': lane[3],
-                            'start_y': lane[2],
+                            'start_x': lane[self.lane_classes + 3],
+                            'start_y': lane[self.lane_classes + 2],
                             'conf': lane[1]
                         })
             lanes.append(lane)
@@ -321,10 +322,13 @@ class CLRHead(nn.Module):
     def loss(self,
              output,
              batch,
+             conf_loss_weight=8.,
              cls_loss_weight=2.,
              xyt_loss_weight=0.5,
              iou_loss_weight=2.,
              seg_loss_weight=1.):
+        if self.cfg.haskey('conf_loss_weight'):
+            conf_loss_weight = self.cfg.conf_loss_weight
         if self.cfg.haskey('cls_loss_weight'):
             cls_loss_weight = self.cfg.cls_loss_weight
         if self.cfg.haskey('xyt_loss_weight'):
@@ -337,6 +341,7 @@ class CLRHead(nn.Module):
         predictions_lists = output['predictions_lists']
         targets = batch['lane_line'].clone()
         cls_criterion = FocalLoss(alpha=0.25, gamma=2.)
+        conf_loss = 0
         cls_loss = 0
         reg_xytl_loss = 0
         iou_loss = 0
@@ -350,46 +355,52 @@ class CLRHead(nn.Module):
 
                 if len(target) == 0:
                     # If there are no targets, all predictions have to be negatives (i.e., 0 confidence)
-                    cls_target = predictions.new_zeros(predictions.shape[0]).long()
-                    cls_pred = predictions[:, :2]
-                    cls_loss = cls_loss + cls_criterion(
-                        cls_pred, cls_target).sum()
+                    conf_target = predictions.new_zeros(predictions.shape[0]).long()
+                    conf_pred = predictions[:, :2]
+                    conf_loss = conf_loss + cls_criterion(
+                        conf_pred, conf_target).sum()
                     continue
 
                 with torch.no_grad():
-                    matched_row_inds, matched_col_inds = assign(
-                        predictions, target, self.img_w, self.img_h)
+                    matched_row_inds, matched_col_inds, matched_cls = assign(
+                        predictions, target, self.img_w, self.img_h, lane_classes=self.lane_classes)
 
                 # classification targets
                 cls_target = predictions.new_zeros(predictions.shape[0]).long()
-                cls_target[matched_row_inds] = 1
-                cls_pred = predictions[:, :2]
+                conf_target = predictions.new_zeros(predictions.shape[0]).long()
+                for row, cls in zip(matched_row_inds, matched_cls):
+                    cls_target[row] = cls
+                    conf_target[row] = 1
+                cls_pred = predictions[:, 2:self.lane_classes + 2]
+                conf_pred = predictions[:, :2]
 
                 # regression targets -> [start_y, start_x, theta] (all transformed to absolute values), only on matched pairs
-                reg_yxtl = predictions[matched_row_inds, 2:6]
+                reg_yxtl = predictions[matched_row_inds, self.lane_classes + 2:self.lane_classes + 6]
                 reg_yxtl[:, 0] *= self.n_strips
                 reg_yxtl[:, 1] *= (self.img_w - 1)
                 reg_yxtl[:, 2] *= 180
                 reg_yxtl[:, 3] *= self.n_strips
 
-                target_yxtl = target[matched_col_inds, 2:6].clone()
+                target_yxtl = target[matched_col_inds, self.lane_classes + 2:self.lane_classes + 6].clone()
 
                 # regression targets -> S coordinates (all transformed to absolute values)
-                reg_pred = predictions[matched_row_inds, 6:]
+                reg_pred = predictions[matched_row_inds, self.lane_classes + 6:]
                 reg_pred *= (self.img_w - 1)
-                reg_targets = target[matched_col_inds, 6:].clone()
+                reg_targets = target[matched_col_inds, self.lane_classes + 6:].clone()
 
                 with torch.no_grad():
                     predictions_starts = torch.clamp(
-                        (predictions[matched_row_inds, 2] *
+                        (predictions[matched_row_inds, self.lane_classes + 2] *
                          self.n_strips).round().long(), 0,
                         self.n_strips)  # ensure the predictions starts is valid
-                    target_starts = (target[matched_col_inds, 2] *
+                    target_starts = (target[matched_col_inds, self.lane_classes + 2] *
                                      self.n_strips).round().long()
                     target_yxtl[:, -1] -= (predictions_starts - target_starts
                                            )  # reg length
 
                 # Loss calculation
+                conf_loss = conf_loss + cls_criterion(conf_pred, conf_target).sum(
+                ) / target.shape[0]
                 cls_loss = cls_loss + cls_criterion(cls_pred, cls_target).sum(
                 ) / target.shape[0]
 
@@ -413,17 +424,19 @@ class CLRHead(nn.Module):
         seg_loss = self.criterion(F.log_softmax(output['seg'], dim=1),
                              batch['seg'].long())
 
+        conf_loss /= (len(targets) * self.refine_layers)
         cls_loss /= (len(targets) * self.refine_layers)
         reg_xytl_loss /= (len(targets) * self.refine_layers)
         iou_loss /= (len(targets) * self.refine_layers)
 
-        loss = cls_loss * cls_loss_weight + reg_xytl_loss * xyt_loss_weight \
+        loss = conf_loss * conf_loss_weight + cls_loss * cls_loss_weight + reg_xytl_loss * xyt_loss_weight \
             + seg_loss * seg_loss_weight + iou_loss * iou_loss_weight
 
         return_value = {
             'loss': loss,
             'loss_stats': {
                 'loss': loss,
+                'conf_loss': conf_loss * conf_loss_weight,
                 'cls_loss': cls_loss * cls_loss_weight,
                 'reg_xytl_loss': reg_xytl_loss * xyt_loss_weight,
                 'seg_loss': seg_loss * seg_loss_weight,
@@ -457,10 +470,10 @@ class CLRHead(nn.Module):
                 continue
             nms_predictions = predictions.detach().clone()
             nms_predictions = torch.cat(
-                [nms_predictions[..., :4], nms_predictions[..., 5:]], dim=-1)
-            nms_predictions[..., 4] = nms_predictions[..., 4] * self.n_strips
+                [nms_predictions[..., :self.lane_classes + 4], nms_predictions[..., self.lane_classes + 5:]], dim=-1)
+            nms_predictions[..., self.lane_classes + 4] = nms_predictions[..., self.lane_classes + 4] * self.n_strips
             nms_predictions[...,
-                            5:] = nms_predictions[..., 5:] * (self.img_w - 1)
+                            self.lane_classes + 5:] = nms_predictions[..., self.lane_classes + 5:] * (self.img_w - 1)
 
             keep, num_to_keep, _ = nms(
                 nms_predictions,
@@ -474,7 +487,7 @@ class CLRHead(nn.Module):
                 decoded.append([])
                 continue
 
-            predictions[:, 5] = torch.round(predictions[:, 5] * self.n_strips)
+            predictions[:, self.lane_classes + 5] = torch.round(predictions[:, self.lane_classes + 5] * self.n_strips)
             if as_lanes:
                 pred = self.predictions_to_pred(predictions)
             else:
