@@ -71,20 +71,23 @@ class TuSimple(BaseDataset):
     def pred2lanes(self, pred):
         ys = np.array(self.h_samples) / self.cfg.ori_img_h
         lanes = []
+        categories = []
         for lane in pred:
             xs = lane(ys)
             invalid_mask = xs < 0
+            category = lane.metadata.get('category', 0)
+            categories.append(category)
             lane = (xs * self.cfg.ori_img_w).astype(int)
             lane[invalid_mask] = -2
             lanes.append(lane.tolist())
 
-        return lanes
+        return lanes, categories
 
     def pred2tusimpleformat(self, idx, pred, runtime):
         runtime *= 1000.  # s to ms
         img_name = self.data_infos[idx]['img_name']
-        lanes = self.pred2lanes(pred)
-        output = {'raw_file': img_name, 'lanes': lanes, 'run_time': runtime}
+        lanes, categories = self.pred2lanes(pred)
+        output = {'raw_file': img_name, 'lanes': lanes, 'run_time': runtime, 'categories': categories}
         return json.dumps(output)
 
     def save_tusimple_predictions(self, predictions, filename, runtimes=None):
@@ -102,7 +105,7 @@ class TuSimple(BaseDataset):
         pred_filename = os.path.join(output_basedir,
                                      'tusimple_predictions.json')
         self.save_tusimple_predictions(predictions, pred_filename, runtimes)
-        result, acc = LaneEval.bench_one_submit(pred_filename,
+        result, acc, cls_acc = LaneEval.bench_one_submit(pred_filename,
                                                 self.cfg.test_json_file)
         self.logger.info(result)
-        return acc
+        return acc, cls_acc

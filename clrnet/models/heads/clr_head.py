@@ -314,7 +314,10 @@ class CLRHead(nn.Module):
                         metadata={
                             'start_x': lane[self.lane_classes + 3],
                             'start_y': lane[self.lane_classes + 2],
-                            'conf': lane[1]
+                            'conf': lane[1],
+                            'category': torch.argmax(
+                                lane[2:self.lane_classes + 2], dim=-1
+                            ).item() + 1
                         })
             lanes.append(lane)
         return lanes

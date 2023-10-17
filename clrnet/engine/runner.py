@@ -31,7 +31,8 @@ class Runner(object):
         self.resume()
         self.optimizer = build_optimizer(self.cfg, self.net)
         self.scheduler = build_scheduler(self.cfg, self.optimizer)
-        self.metric = 0.
+        self.det_metric = 0.
+        self.cls_metric = 0.
         self.val_loader = None
         self.test_loader = None
 
@@ -141,7 +142,14 @@ class Runner(object):
 
         metric = self.val_loader.dataset.evaluate(predictions,
                                                   self.cfg.work_dir)
-        self.recorder.logger.info('metric: ' + str(metric))
+        det_metric, cls_metric = metric
+        self.recorder.logger.info(f'metric: det {det_metric}, cls {cls_metric}')
+        if det_metric > self.det_metric and cls_metric > self.cls_metric:
+            self.det_metric = det_metric
+            self.cls_metric = cls_metric
+            self.save_ckpt(is_best=True)
+        self.recorder.logger.info(f'best metric: det {self.det_metric}, cls {self.cls_metric}')
+        
 
     def save_ckpt(self, is_best=False):
         save_model(self.net, self.optimizer, self.scheduler, self.recorder,
