@@ -315,6 +315,7 @@ class CLRHead(nn.Module):
                             'start_x': lane[self.lane_classes + 3],
                             'start_y': lane[self.lane_classes + 2],
                             'conf': lane[1],
+                            # 0 is background, so add 1
                             'category': torch.argmax(
                                 lane[2:self.lane_classes + 2], dim=-1
                             ).item() + 1

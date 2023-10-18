@@ -112,6 +112,8 @@ class GenerateLaneLine(object):
         # in categories, 0 is background, 1 is cls1, 2 is cls2, etc
         old_categories = list(filter(lambda x: x != 0, old_categories))
         assert len(old_lanes) == len(old_categories), 'Number of lanes and categories must match'
+        # minus 1 to make sure it can be used as index
+        old_categories = list(map(lambda x: x - 1, old_categories))
 
         # removing lanes with less than 2 points
         old_zip = filter(lambda x: len(x[0]) > 1, zip(old_lanes, old_categories))
@@ -147,7 +149,7 @@ class GenerateLaneLine(object):
             all_xs = np.hstack((xs_outside_image, xs_inside_image))
             lanes[lane_idx, 0] = 0
             lanes[lane_idx, 1] = 1
-            lanes[lane_idx, categories[lane_idx] + 1] = 1
+            lanes[lane_idx, categories[lane_idx] + 2] = 1
             lanes[lane_idx, self.lane_classes + 2] = len(xs_outside_image) / self.n_strips
             lanes[lane_idx, self.lane_classes + 3] = xs_inside_image[0]
 
@@ -200,8 +202,12 @@ class GenerateLaneLine(object):
                     image=img_org.copy().astype(np.uint8),
                     line_strings=line_strings_org)
             line_strings.clip_out_of_image_()
+            # categories should be removed simultaneously
+            # use this dirty trick temporarily to avoid mismatch
+            # TODO: fix this
+            categories = sample['categories'][:len(line_strings)]
             new_anno = {'lanes': self.linestrings_to_lanes(line_strings),
-                        'categories': sample['categories']}
+                        'categories': categories}
             try:
                 annos = self.transform_annotation(new_anno)
                 label = annos['label']

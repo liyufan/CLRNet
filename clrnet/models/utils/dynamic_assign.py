@@ -113,7 +113,7 @@ def assign(
     distances_score = 1 - (distances_score / torch.max(distances_score)
                            ) + 1e-2  # normalize the distance
     conf_targets = targets[:, 1].long()
-    lane_cls_targets = (targets[:, 2:lane_classes + 2] == 1).nonzero()[:, 1].long() + 1
+    lane_cls_targets = (targets[:, 2:lane_classes + 2] == 1).nonzero()[:, 1].long()
     # classification cost
     cls_score = focal_cost(predictions[:, :2], conf_targets) + focal_cost(
         predictions[:, 2:2 + lane_classes], lane_cls_targets
