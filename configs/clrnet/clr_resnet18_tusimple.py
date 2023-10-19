@@ -19,8 +19,9 @@ heads = dict(type='CLRHead',
              sample_points=36)
 
 iou_loss_weight = 2.
-cls_loss_weight = 6.
-xyt_loss_weight = 0.5
+conf_loss_weight = 6.
+cls_loss_weight = 1.5
+xyt_loss_weight = 0.1
 seg_loss_weight = 1.0
 
 work_dirs = "work_dirs/clr/r18_tusimple"
@@ -41,7 +42,7 @@ total_iter = (3626 // batch_size + 1) * epochs
 scheduler = dict(type='CosineAnnealingLR', T_max=total_iter)
 
 eval_ep = 3
-save_ep = epochs
+save_ep = 10
 
 img_norm = dict(mean=[103.939, 116.779, 123.68], std=[1., 1., 1.])
 ori_img_w = 1280
@@ -125,3 +126,19 @@ num_classes = 6 + 1
 ignore_label = 255
 bg_weight = 0.4
 lr_update_by_epoch = False
+lane_classes = 5
+# https://github.com/fabvio/TuSimple-lane-classes/blob/master/class_mapping.txt
+# 0: background, 8: solid dashed
+# Note background is not included in label, class number in label starts from 1
+# Merge 'continuous yellow' and 'continuous white' to 'continuous': (1, 2) -> 1
+# Merge 'dashed', 'double dashed' and 'Botts dots' to 'dashed': (3, 4, 5) -> 2
+# Rename 'double continuous yellow' to 'double': 6 -> 3
+# Decrease remaining classes number, 'unknown': 7 -> 4, 'solid dashed': 8 -> 5
+cls_merge = {0: 0, 1: 1, 2: 1, 3: 2, 4: 2, 5: 2, 6: 3, 7: 4, 8: 5}
+vis_cls_mapping = {
+    1: {'name': 'continuous', 'color': (0, 255, 0)},
+    2: {'name': 'dashed', 'color': (0, 255, 255)},
+    3: {'name': 'double', 'color': (255, 255, 0)},
+    4: {'name': 'unknown', 'color': (255, 0, 0)},
+    5: {'name': 'solid dashed', 'color': (0, 0, 255)},
+}

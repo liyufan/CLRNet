@@ -28,8 +28,10 @@ class BaseDataset(Dataset):
             img = cv2.imread(osp.join(self.data_root, img_name))
             out_file = osp.join(self.cfg.work_dir, 'visualization',
                                 img_name.replace('/', '_'))
-            lanes = [lane.to_array(self.cfg) for lane in lanes]
-            imshow_lanes(img, lanes, out_file=out_file)
+            lanes, categories = [lane.to_array(self.cfg) for lane in lanes], [
+                lane.metadata['category'] for lane in lanes
+            ]
+            imshow_lanes(img, lanes, categories, self.cfg.vis_cls_mapping, out_file=out_file)
 
     def __len__(self):
         return len(self.data_infos)

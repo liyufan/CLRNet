@@ -28,7 +28,7 @@ class Detect(object):
     def preprocess(self, img_path):
         ori_img = cv2.imread(img_path)
         img = ori_img[self.cfg.cut_height :, :, :].astype(np.float32)
-        data = {'img': img, 'lanes': []}
+        data = {'img': img, 'lanes': [], 'categories': []}
         data = self.processes(data)
         data['img'] = data['img'].unsqueeze(0)
         data.update({'img_path': img_path, 'ori_img': ori_img})
@@ -45,7 +45,15 @@ class Detect(object):
         if out_file:
             out_file = osp.join(out_file, osp.basename(data['img_path']))
         lanes = [lane.to_array(self.cfg) for lane in data['lanes']]
-        imshow_lanes(data['ori_img'], lanes, show=self.cfg.show, out_file=out_file)
+        categories = [lane.metadata['category'] for lane in data['lanes']]
+        imshow_lanes(
+            data['ori_img'],
+            lanes,
+            categories,
+            vis_cls_mapping=self.cfg.vis_cls_mapping,
+            show=self.cfg.show,
+            out_file=out_file,
+        )
 
     def run(self, data):
         data = self.preprocess(data)

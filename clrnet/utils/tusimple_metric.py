@@ -65,7 +65,7 @@ class LaneEval(object):
                            min(len(gt), 4.), 1.), correct / matched if matched > 0 else 0.
 
     @staticmethod
-    def bench_one_submit(pred_file, gt_file):
+    def bench_one_submit(pred_file, gt_file, cls_merge=None):
         try:
             json_pred = [
                 json.loads(line) for line in open(pred_file).readlines()
@@ -95,6 +95,8 @@ class LaneEval(object):
             gt_lanes = gt['lanes']
             y_samples = gt['h_samples']
             gt_categories = gt['categories'] if 'categories' in gt else list(map(int, gt['classes'].split(' ')))
+            if cls_merge:
+                gt_categories = list(map(cls_merge.get, gt_categories))
             try:
                 a, p, n, cls_a = LaneEval.bench(pred_lanes, gt_lanes, y_samples,
                                          run_time, pred_categories, gt_categories)

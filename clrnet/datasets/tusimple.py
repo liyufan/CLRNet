@@ -105,7 +105,9 @@ class TuSimple(BaseDataset):
         pred_filename = os.path.join(output_basedir,
                                      'tusimple_predictions.json')
         self.save_tusimple_predictions(predictions, pred_filename, runtimes)
-        result, acc, cls_acc = LaneEval.bench_one_submit(pred_filename,
-                                                self.cfg.test_json_file)
+        cls_merge = self.cfg.cls_merge if self.cfg.haskey('cls_merge') else None
+        result, acc, cls_acc = LaneEval.bench_one_submit(
+            pred_filename, self.cfg.test_json_file, cls_merge
+        )
         self.logger.info(result)
         return acc, cls_acc

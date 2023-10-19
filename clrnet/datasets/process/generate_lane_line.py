@@ -112,21 +112,22 @@ class GenerateLaneLine(object):
         # in categories, 0 is background, 1 is cls1, 2 is cls2, etc
         old_categories = list(filter(lambda x: x != 0, old_categories))
         assert len(old_lanes) == len(old_categories), 'Number of lanes and categories must match'
-        # minus 1 to make sure it can be used as index
-        old_categories = list(map(lambda x: x - 1, old_categories))
+        if len(old_lanes) > 0:
+            # minus 1 to make sure it can be used as index
+            old_categories = list(map(lambda x: x - 1, old_categories))
 
-        # removing lanes with less than 2 points
-        old_zip = filter(lambda x: len(x[0]) > 1, zip(old_lanes, old_categories))
-        old_lanes, categories = zip(*old_zip)
-        # sort lane points by Y (bottom to top of the image)
-        # no impact on the correspondence between categories and lanes
-        old_lanes = [sorted(lane, key=lambda x: -x[1]) for lane in old_lanes]
-        # remove points with same Y (keep first occurrence)
-        old_lanes = [self.filter_lane(lane) for lane in old_lanes]
-        # normalize the annotation coordinates
-        old_lanes = [[[
-            x * self.img_w / float(img_w), y * self.img_h / float(img_h)
-        ] for x, y in lane] for lane in old_lanes]
+            # removing lanes with less than 2 points
+            old_zip = filter(lambda x: len(x[0]) > 1, zip(old_lanes, old_categories))
+            old_lanes, categories = zip(*old_zip)
+            # sort lane points by Y (bottom to top of the image)
+            # no impact on the correspondence between categories and lanes
+            old_lanes = [sorted(lane, key=lambda x: -x[1]) for lane in old_lanes]
+            # remove points with same Y (keep first occurrence)
+            old_lanes = [self.filter_lane(lane) for lane in old_lanes]
+            # normalize the annotation coordinates
+            old_lanes = [[[
+                x * self.img_w / float(img_w), y * self.img_h / float(img_h)
+            ] for x, y in lane] for lane in old_lanes]
         # create tranformed annotations
         lanes = np.ones(
             (self.max_lanes, 2 + self.lane_classes + 1 + 1 + 2 + self.n_offsets), dtype=np.float32
