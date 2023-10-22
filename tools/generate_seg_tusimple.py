@@ -73,8 +73,7 @@ def gen_label_for_json(args, image_set):
 
             seg_path = img_path.split("/")
             seg_path, img_name = os.path.join(args.root, args.savedir,
-                                              seg_path[1],
-                                              seg_path[2]), seg_path[3]
+                                              *seg_path[1:-1]), seg_path[-1]
             os.makedirs(seg_path, exist_ok=True)
             seg_path = os.path.join(seg_path, img_name[:-3] + "png")
             cv2.imwrite(seg_path, seg_img)
