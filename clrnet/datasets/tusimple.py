@@ -47,8 +47,12 @@ class TuSimple(BaseDataset):
                                 else list(map(int, data['classes'].split(' '))))
                 lanes = [[(x, y) for (x, y) in zip(lane, y_samples) if x >= 0]
                          for lane in gt_lanes]
-                lanes, categories = zip(*[(lane, cat) for lane, cat in zip(
-                                        lanes, categories) if len(lane) > 1])
+                _zip = zip(lanes, categories)
+                lanes, categories = [], []
+                for lane, cat in _zip:
+                    if len(lane) > 1:
+                        lanes.append(lane)
+                        categories.append(cat)
                 max_lanes = max(max_lanes, len(lanes))
                 self.data_infos.append({
                     'img_path':
