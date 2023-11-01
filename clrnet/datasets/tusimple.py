@@ -110,8 +110,10 @@ class TuSimple(BaseDataset):
                                      'tusimple_predictions.json')
         self.save_tusimple_predictions(predictions, pred_filename, runtimes)
         cls_merge = self.cfg.cls_merge if self.cfg.haskey('cls_merge') else None
+        display_labels = [x['name'] for x in self.cfg.vis_cls_mapping.values()]
+        cm_file = os.path.join(output_basedir, 'confusion_matrix.svg')
         result, acc, cls_acc = LaneEval.bench_one_submit(
-            pred_filename, self.cfg.test_json_file, cls_merge
+            pred_filename, self.cfg.test_json_file, cls_merge, display_labels, cm_file
         )
         self.logger.info(result)
         return acc, cls_acc

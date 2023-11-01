@@ -1,12 +1,16 @@
 import numpy as np
 from sklearn.linear_model import LinearRegression
 import json as json
+from sklearn.metrics import ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
 
 
 class LaneEval(object):
     lr = LinearRegression()
     pixel_thresh = 20
     pt_thresh = 0.85
+    y_true = []
+    y_pred = []
 
     @staticmethod
     def get_angle(xs, y_samples):
@@ -51,6 +55,8 @@ class LaneEval(object):
             else:
                 matched += 1
                 matched_idx = np.argmax(accs)
+                LaneEval.y_true.append(cls)
+                LaneEval.y_pred.append(pred_cls[matched_idx])
                 if pred_cls[matched_idx] == cls:
                     correct += 1
             line_accs.append(max_acc)
@@ -65,7 +71,13 @@ class LaneEval(object):
                            min(len(gt), 4.), 1.), correct / matched if matched > 0 else 0.
 
     @staticmethod
-    def bench_one_submit(pred_file, gt_file, cls_merge=None):
+    def bench_one_submit(
+        pred_file,
+        gt_file,
+        cls_merge=None,
+        display_labels=None,
+        cm_file='confusion_matrix.svg',
+    ):
         try:
             json_pred = [
                 json.loads(line) for line in open(pred_file).readlines()
@@ -107,6 +119,13 @@ class LaneEval(object):
             fn += n
             cls_accuracy += cls_a
         num = len(gts)
+        ConfusionMatrixDisplay.from_predictions(
+            LaneEval.y_true,
+            LaneEval.y_pred,
+            normalize='true',
+            display_labels=display_labels,
+        )
+        plt.savefig(cm_file)
         # the first return parameter is the default ranking parameter
 
         fp = fp / num
