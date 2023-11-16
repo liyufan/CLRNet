@@ -1,5 +1,6 @@
 import argparse
 import glob
+import json
 import os
 import os.path as osp
 from pathlib import Path
@@ -40,6 +41,14 @@ class Detect(object):
             data = self.net.module.get_lanes(data)
         return data
 
+    def convert_lane(self, lane):
+        ys = np.array(list(range(160, 720, 10))) / self.cfg.ori_img_h
+        xs = lane(ys)
+        invalid_mask = xs < 0
+        lane = (xs * self.cfg.ori_img_w).astype(int)
+        lane[invalid_mask] = -2
+        return lane.tolist()
+
     def show(self, data):
         out_file = self.cfg.savedir
         if out_file:
@@ -54,6 +63,12 @@ class Detect(object):
             show=self.cfg.show,
             out_file=out_file,
         )
+        pred = {
+            'raw_file': osp.basename(data['img_path']),
+            'lanes': [self.convert_lane(lane) for lane in data['lanes']],
+            'categories': categories,
+        }
+        data['pred'] = json.dumps(pred)
 
     def run(self, data):
         data = self.preprocess(data)
@@ -83,8 +98,11 @@ def process(args):
     cfg.load_from = args.load_from
     detect = Detect(cfg)
     paths = get_img_paths(args.img)
+    lines = []
     for p in tqdm(paths):
-        detect.run(p)
+        lines.append(detect.run(p)['pred'])
+    with open(osp.join(cfg.savedir, 'pred.json'), 'w') as output_file:
+        output_file.write('\n'.join(lines))
 
 
 if __name__ == '__main__':
