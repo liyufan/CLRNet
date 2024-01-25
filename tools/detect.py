@@ -3,6 +3,7 @@ import glob
 import json
 import os
 import os.path as osp
+import sys
 from pathlib import Path
 
 import cv2
@@ -55,14 +56,15 @@ class Detect(object):
             out_file = osp.join(out_file, osp.basename(data['img_path']))
         lanes = [lane.to_array(self.cfg) for lane in data['lanes']]
         categories = [lane.metadata['category'] for lane in data['lanes']]
-        imshow_lanes(
-            data['ori_img'],
-            lanes,
-            categories,
-            vis_cls_mapping=self.cfg.vis_cls_mapping,
-            show=self.cfg.show,
-            out_file=out_file,
-        )
+        if self.cfg.save_img:
+            imshow_lanes(
+                data['ori_img'],
+                lanes,
+                categories,
+                vis_cls_mapping=self.cfg.vis_cls_mapping,
+                show=self.cfg.show,
+                out_file=out_file,
+            )
         pred = {
             'raw_file': osp.basename(data['img_path']),
             'lanes': [self.convert_lane(lane) for lane in data['lanes']],
@@ -83,7 +85,12 @@ def get_img_paths(path):
     if '*' in p:
         paths = sorted(glob.glob(p, recursive=True))  # glob
     elif os.path.isdir(p):
-        paths = sorted(glob.glob(os.path.join(p, '*.*')))  # dir
+        exts = ['jpg', 'png', 'jpeg']
+        if sys.platform != 'win32':
+            exts += [e.upper() for e in exts]
+        paths = []
+        for ext in exts:
+            paths += sorted(glob.glob(os.path.join(p, f'*.{ext}')))  # dir
     elif os.path.isfile(p):
         paths = [p]  # files
     else:
@@ -93,6 +100,7 @@ def get_img_paths(path):
 
 def process(args):
     cfg = Config.fromfile(args.config)
+    cfg.save_img = args.save_img
     cfg.show = args.show
     cfg.savedir = args.savedir
     cfg.load_from = args.load_from
@@ -101,6 +109,8 @@ def process(args):
     lines = []
     for p in tqdm(paths):
         lines.append(detect.run(p)['pred'])
+    if not cfg.save_img:
+        os.makedirs(cfg.savedir, exist_ok=True)
     with open(osp.join(cfg.savedir, 'pred.json'), 'w') as output_file:
         output_file.write('\n'.join(lines))
 
@@ -111,6 +121,9 @@ if __name__ == '__main__':
     parser.add_argument(
         '--img',
         help='The path of the img (img file or img_folder), for example: "data/*.png"',
+    )
+    parser.add_argument(
+        '--save_img', action='store_true', help='Whether to save the image'
     )
     parser.add_argument('--show', action='store_true', help='Whether to show the image')
     parser.add_argument(
