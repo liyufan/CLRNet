@@ -474,10 +474,20 @@ class CLRHead(nn.Module):
                 continue
             nms_predictions = predictions.detach().clone()
             nms_predictions = torch.cat(
-                [nms_predictions[..., :self.lane_classes + 4], nms_predictions[..., self.lane_classes + 5:]], dim=-1)
-            nms_predictions[..., self.lane_classes + 4] = nms_predictions[..., self.lane_classes + 4] * self.n_strips
-            nms_predictions[...,
-                            self.lane_classes + 5:] = nms_predictions[..., self.lane_classes + 5:] * (self.img_w - 1)
+                [
+                    # 2 scores
+                    nms_predictions[..., :2],
+                    # y, x
+                    nms_predictions[..., self.lane_classes + 2 : self.lane_classes + 4],
+                    # l, 72 coordinates
+                    nms_predictions[..., self.lane_classes + 5 :],
+                ],
+                dim=-1,
+            )
+            # l
+            nms_predictions[..., 4] = nms_predictions[..., 4] * self.n_strips
+            # 72 coordinates
+            nms_predictions[..., 5:] = nms_predictions[..., 5:] * (self.img_w - 1)
 
             keep, num_to_keep, _ = nms(
                 nms_predictions,
@@ -491,6 +501,7 @@ class CLRHead(nn.Module):
                 decoded.append([])
                 continue
 
+            # l
             predictions[:, self.lane_classes + 5] = torch.round(predictions[:, self.lane_classes + 5] * self.n_strips)
             if as_lanes:
                 pred = self.predictions_to_pred(predictions)
