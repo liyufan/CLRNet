@@ -49,7 +49,7 @@ ori_img_w = 1280
 ori_img_h = 720
 img_h = 320
 img_w = 800
-cut_height = 160
+cut_height = 0
 
 train_process = [
     dict(

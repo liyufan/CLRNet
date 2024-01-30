@@ -1,14 +1,19 @@
 import argparse
+import datetime
 import glob
-import json
 import os
 import os.path as osp
+import shutil
 import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
+from lxml import builder, etree
+from lxml.etree import _Element as Element
+from lxml.etree import _ElementTree as ElementTree
+from numpy.typing import NDArray
 from tqdm import tqdm
 
 from clrnet.datasets.process import Process
@@ -16,6 +21,50 @@ from clrnet.models.registry import build_net
 from clrnet.utils.config import Config
 from clrnet.utils.net_utils import load_network
 from clrnet.utils.visualization import imshow_lanes
+
+
+# Reduce the number of points on the same line
+def reduce_points(points: NDArray, threshold: int = 10) -> NDArray:
+    if points.shape[0] <= 2:
+        return points
+    x1, y1 = points[0]
+    x2, y2 = points[-1]
+    if x1 == x2:
+        return np.array([points[0], points[-1]])
+    k = (y2 - y1) / (x2 - x1)
+    b = y1 - k * x1
+    dis = np.abs(k * points[:, 0] - points[:, 1] + b) / np.sqrt(k * k + 1)
+    index = np.argmax(dis)
+    if dis[index] > threshold:
+        return np.vstack(
+            (
+                reduce_points(points[: index + 1], threshold)[:-1],
+                reduce_points(points[index:], threshold),
+            )
+        )
+    else:
+        return np.array([points[0], points[-1]])
+
+
+def add_object_node(xml_file: str, name: str, date: str, time: str, points: NDArray):
+    dom: ElementTree = etree.parse(
+        xml_file, parser=etree.XMLParser(remove_blank_text=True)
+    )
+    root: Element = dom.getroot()
+    maker = builder.ElementMaker()
+    points_list = [maker.point(maker.x(str(x)), maker.y(str(y))) for x, y in points]
+    object_node = maker.object(
+        maker.name(name),
+        maker.type("rect"),
+        maker.algorithm(
+            maker.name("clrnet"),
+            maker.date(date),
+            maker.time(time),
+        ),
+        maker.multiPolyline(maker.polyline(*points_list)),
+    )
+    root.append(object_node)
+    dom.write(xml_file, pretty_print=True)
 
 
 class Detect(object):
@@ -26,6 +75,12 @@ class Detect(object):
         self.net = torch.nn.parallel.DataParallel(self.net, device_ids=range(1)).cuda()
         self.net.eval()
         load_network(self.net, self.cfg.load_from)
+        self.mapping = {
+            1: "solid_laneline",
+            2: "dashed_laneline",
+            3: "dual_solid_laneline",
+            4: "solid_dashed_laneline",
+        }
 
     def preprocess(self, img_path):
         ori_img = cv2.imread(img_path)
@@ -42,20 +97,36 @@ class Detect(object):
             data = self.net.module.get_lanes(data)
         return data
 
-    def convert_lane(self, lane):
-        ys = np.array(list(range(160, 720, 10))) / self.cfg.ori_img_h
-        xs = lane(ys)
-        invalid_mask = xs < 0
-        lane = (xs * self.cfg.ori_img_w).astype(int)
-        lane[invalid_mask] = -2
-        return lane.tolist()
-
     def show(self, data):
         out_file = self.cfg.savedir
         if out_file:
             out_file = osp.join(out_file, osp.basename(data['img_path']))
-        lanes = [lane.to_array(self.cfg) for lane in data['lanes']]
+
+        base_name = os.path.basename(data['img_path'])
+        root, _ = os.path.splitext(base_name)
+        xml_file = os.path.join(self.cfg.savedir, f"{root}.xml")
+        if self.cfg.prelabel and not os.path.exists(xml_file):
+            raise FileNotFoundError(f"{xml_file} not found")
+        out_xml_file = os.path.join(self.cfg.savedir, f"{root}_label.xml")
+        if self.cfg.prelabel:
+            shutil.copy(xml_file, out_xml_file)
+
+        ori_img = data['ori_img']
+        cur_cfg = Config(dict(ori_img_h=ori_img.shape[0], ori_img_w=ori_img.shape[1]))
+        cur_cfg.sample_y = range(0, cur_cfg.ori_img_h, 10)
+
+        now = datetime.datetime.now()
+        date = now.strftime("%Y-%m-%d")
+        time = now.strftime("%H-%M-%S")
+        lanes = [lane.to_array(cur_cfg) for lane in data['lanes']]
         categories = [lane.metadata['category'] for lane in data['lanes']]
+
+        if self.cfg.prelabel:
+            for lane, category in zip(lanes, categories):
+                points = reduce_points(lane.astype(np.int32))
+                add_object_node(
+                    out_xml_file, self.mapping[category], date, time, points
+                )
         if self.cfg.save_img:
             imshow_lanes(
                 data['ori_img'],
@@ -65,12 +136,6 @@ class Detect(object):
                 show=self.cfg.show,
                 out_file=out_file,
             )
-        pred = {
-            'raw_file': osp.basename(data['img_path']),
-            'lanes': [self.convert_lane(lane) for lane in data['lanes']],
-            'categories': categories,
-        }
-        data['pred'] = json.dumps(pred)
 
     def run(self, data):
         data = self.preprocess(data)
@@ -104,15 +169,11 @@ def process(args):
     cfg.show = args.show
     cfg.savedir = args.savedir
     cfg.load_from = args.load_from
+    cfg.prelabel = args.prelabel
     detect = Detect(cfg)
     paths = get_img_paths(args.img)
-    lines = []
     for p in tqdm(paths):
-        lines.append(detect.run(p)['pred'])
-    if not cfg.save_img:
-        os.makedirs(cfg.savedir, exist_ok=True)
-    with open(osp.join(cfg.savedir, 'pred.json'), 'w') as output_file:
-        output_file.write('\n'.join(lines))
+        detect.run(p)
 
 
 if __name__ == '__main__':
@@ -132,5 +193,10 @@ if __name__ == '__main__':
     parser.add_argument(
         '--load_from', type=str, default='best.pth', help='The path of model'
     )
+    parser.add_argument(
+        '--prelabel', action='store_true', help='Whether to start prelabel'
+    )
     args = parser.parse_args()
+    if args.save_img and args.prelabel:
+        raise ValueError('--save_img and --prelabel cannot be set at the same time')
     process(args)
